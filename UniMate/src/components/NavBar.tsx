@@ -69,9 +69,24 @@ export default function Navbar({ mobileMenuOpen, setMobileMenuOpen }: NavbarProp
 
                 {profileOpen && (
                   <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                    <div className="px-4 py-3 text-sm text-gray-700 truncate">
-                      {currentUser.displayName || currentUser.email}
-                    </div>
+                    <button
+                      onClick={() => {
+                        navigate('/profile');
+                        setProfileOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 font-medium"
+                    >
+                      Profile
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigate('/contact');
+                        setProfileOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Contact Us
+                    </button>
                     <button
                       onClick={async () => {
                         await signOut(auth);
@@ -86,26 +101,15 @@ export default function Navbar({ mobileMenuOpen, setMobileMenuOpen }: NavbarProp
                 )}
               </div>
             ) : (
-              <>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    navigate('/login');
-                  }}
-                  className="text-teal-600 hover:text-teal-700 font-medium transition-colors duration-200"
-                >
-                  Login
-                </button>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    navigate('/signup');
-                  }}
-                  className="bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 transition-colors duration-200 font-medium"
-                >
-                  Sign Up
-                </button>
-              </>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  navigate('/user-details');
+                }}
+                className="bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 transition-colors duration-200 font-medium"
+              >
+                Get Started
+              </button>
             )}
           </div>
 
@@ -133,41 +137,45 @@ export default function Navbar({ mobileMenuOpen, setMobileMenuOpen }: NavbarProp
 
             {currentUser ? (
               <>
-                <div className="px-2 py-2 text-sm text-gray-700 truncate">
-                  {currentUser.displayName || currentUser.email}
-                </div>
+                <button
+                  onClick={() => {
+                    navigate('/profile');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="block w-full text-left text-gray-700 hover:bg-gray-50 py-3 px-2 font-medium transition-colors duration-200"
+                >
+                  Profile
+                </button>
+                <button
+                  onClick={() => {
+                    navigate('/contact');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="block w-full text-left text-gray-700 hover:bg-gray-50 py-2 px-2 transition-colors duration-200"
+                >
+                  Contact Us
+                </button>
                 <button
                   onClick={async () => {
                     await signOut(auth);
                     setMobileMenuOpen(false);
                     navigate('/');
                   }}
-                  className="block w-full text-left text-gray-700 hover:text-gray-900 py-2 font-medium transition-colors duration-200"
+                  className="block w-full text-left text-gray-700 hover:bg-gray-50 py-2 px-2 transition-colors duration-200"
                 >
                   Logout
                 </button>
               </>
             ) : (
-              <>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    navigate('/login');
-                  }}
-                  className="block w-full text-left text-teal-600 hover:text-teal-700 py-2 font-medium transition-colors duration-200"
-                >
-                  Login
-                </button>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    navigate('/signup');
-                  }}
-                  className="block w-full bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 transition-colors duration-200 font-medium"
-                >
-                  Sign Up
-                </button>
-              </>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  navigate('/user-details');
+                }}
+                className="block w-full bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 transition-colors duration-200 font-medium"
+              >
+                Get Started
+              </button>
             )}
           </div>
         </div>
