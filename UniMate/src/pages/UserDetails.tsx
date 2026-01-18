@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, User, MapPin, Moon, TrendingUp, Search, Save, MessageSquare } from 'lucide-react';
+import { ArrowLeft, User, MapPin, Moon, TrendingUp, Search, Save, MessageSquare, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface UserDetailsData {
@@ -44,6 +44,10 @@ interface UserDetailsData {
 
 export default function UserDetails() {
   const navigate = useNavigate();
+  
+  // Multi-step form state
+  const [currentStep, setCurrentStep] = useState(1);
+  const totalSteps = 6;
   
   const [formData, setFormData] = useState<UserDetailsData>({
     // Basic Information
@@ -156,6 +160,13 @@ export default function UserDetails() {
     }
     
     try {
+      // Show loading state
+      const submitButton = e.currentTarget.querySelector('button[type="submit"]');
+      if (submitButton) {
+        submitButton.textContent = 'Submitting...';
+        submitButton.setAttribute('disabled', 'true');
+      }
+
       const response = await fetch('http://localhost:5000/api/user-details', {
         method: 'POST',
         headers: {
@@ -167,61 +178,56 @@ export default function UserDetails() {
       if (response.ok) {
         const data = await response.json();
         console.log('User Details submitted successfully:', data);
-        alert('User details submitted successfully! We will find compatible roommates for you.');
         
-        // Reset form after successful submission
-        setFormData({
-          // Basic Information
-          fullName: '',
-          age: '',
-          gender: '',
-          university: '',
-          course: '',
-          year: '',
-          
-          // Location & Stay Preferences
-          currentCity: '',
-          preferredArea: '',
-          moveInDate: '',
-          budgetRange: '5k-8k',
-          roomType: 'shared',
-          
-          // Lifestyle Habits
-          sleepSchedule: '',
-          smoking: '',
-          drinking: '',
-          foodPreference: '',
-          cleanlinessLevel: '',
-          studyStyle: '',
-          
-          // Personality Traits
-          introvertExtrovert: 3,
-          organizedEasygoing: 3,
-          silentTalkative: 3,
-          earlyRiserNightOwl: 3,
-          
-          // Roommate Expectations
-          preferredRoommateGender: '',
-          noiseTolerance: '',
-          guestFrequency: '',
-          maxRoommatesCount: '',
-          
-          // About Me
-          bio: ''
-        });
+        // Get the user ID from the response
+        const userId = data.userDetails?.id || data.id;
+        
+        if (userId) {
+          // Navigate to match results with the user ID
+          navigate('/match-results', { 
+            state: { userId: userId },
+            replace: true 
+          });
+        } else {
+          throw new Error('No user ID received from server');
+        }
       } else {
-        const errorData = await response.json();
-        console.error('Submission error:', errorData);
-        alert('Failed to submit user details. Please try again.');
+        throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
       }
     } catch (error) {
-      console.error('Network error:', error);
-      alert('Network error. Please check your connection and try again.');
+      console.error('Error submitting form:', error);
+      alert(`Error submitting form: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Reset button state
+      const submitButton = e.currentTarget.querySelector('button[type="submit"]');
+      if (submitButton) {
+        submitButton.textContent = 'Find Compatible Roommates';
+        submitButton.removeAttribute('disabled');
+      }
     }
   };
 
   const handleBack = () => {
     navigate('/');
+  };
+
+  const handleNextStep = () => {
+    if (currentStep < totalSteps) {
+      setCurrentStep(currentStep + 1);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handlePrevStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleStepClick = (step: number) => {
+    setCurrentStep(step);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const getPersonalityLabel = (value: number, labels: string[]) => {
@@ -255,15 +261,51 @@ export default function UserDetails() {
           </div>
         </div>
 
+        {/* Progress Indicator */}
+        <div className="px-8 py-6 bg-gray-50 border-b border-gray-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm font-medium text-gray-600">Step {currentStep} of {totalSteps}</div>
+            <div className="text-sm text-gray-500">{Math.round((currentStep / totalSteps) * 100)}% Complete</div>
+          </div>
+          <div className="flex items-center gap-2">
+            {[1, 2, 3, 4, 5, 6].map((step) => (
+              <button
+                key={step}
+                onClick={() => handleStepClick(step)}
+                className={`flex-1 h-2 rounded-full transition-all duration-300 ${
+                  step <= currentStep 
+                    ? 'bg-gradient-to-r from-teal-600 to-blue-600' 
+                    : 'bg-gray-200 hover:bg-gray-300'
+                }`}
+                aria-label={`Go to step ${step}`}
+              />
+            ))}
+          </div>
+          <div className="flex justify-between mt-3">
+            {['Basic Info', 'Location', 'Lifestyle', 'Personality', 'Expectations', 'About Me'].map((label, index) => (
+              <div 
+                key={index}
+                className={`text-xs font-medium transition-colors duration-300 ${
+                  index + 1 === currentStep ? 'text-teal-600' : 
+                  index + 1 < currentStep ? 'text-gray-600' : 'text-gray-400'
+                }`}
+              >
+                {label}
+              </div>
+            ))}
+          </div>
+        </div>
+
         <form onSubmit={handleSubmit} className="p-8 space-y-8">
           {/* Section 1: Basic Information */}
-          <div className="space-y-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
-                <User className="w-4 h-4 text-teal-600" />
+          {currentStep === 1 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
+                  <User className="w-4 h-4 text-teal-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">Basic Information</h2>
               </div>
-              <h2 className="text-xl font-semibold text-gray-900">Basic Information</h2>
-            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -353,16 +395,18 @@ export default function UserDetails() {
                 </select>
               </div>
             </div>
-          </div>
+            </div>
+          )}
 
           {/* Section 2: Location & Stay Preferences */}
-          <div className="space-y-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                <MapPin className="w-4 h-4 text-blue-600" />
+          {currentStep === 2 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <MapPin className="w-4 h-4 text-blue-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">Location & Stay Preferences</h2>
               </div>
-              <h2 className="text-xl font-semibold text-gray-900">Location & Stay Preferences</h2>
-            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -445,16 +489,18 @@ export default function UserDetails() {
                 </div>
               </div>
             </div>
-          </div>
+            </div>
+          )}
 
           {/* Section 3: Lifestyle Habits */}
-          <div className="space-y-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Moon className="w-4 h-4 text-purple-600" />
+          {currentStep === 3 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <Moon className="w-4 h-4 text-purple-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">Lifestyle Habits</h2>
               </div>
-              <h2 className="text-xl font-semibold text-gray-900">Lifestyle Habits</h2>
-            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div>
@@ -549,16 +595,18 @@ export default function UserDetails() {
                 </select>
               </div>
             </div>
-          </div>
+            </div>
+          )}
 
           {/* Section 4: Personality Traits */}
-          <div className="space-y-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                <TrendingUp className="w-4 h-4 text-orange-600" />
+          {currentStep === 4 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4 text-orange-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">Personality Traits</h2>
               </div>
-              <h2 className="text-xl font-semibold text-gray-900">Personality Traits</h2>
-            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -633,16 +681,18 @@ export default function UserDetails() {
                 </div>
               </div>
             </div>
-          </div>
+            </div>
+          )}
 
           {/* Section 5: Roommate Expectations */}
-          <div className="space-y-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                <User className="w-4 h-4 text-green-600" />
+          {currentStep === 5 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                  <User className="w-4 h-4 text-green-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">Roommate Expectations</h2>
               </div>
-              <h2 className="text-xl font-semibold text-gray-900">Roommate Expectations</h2>
-            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -707,16 +757,18 @@ export default function UserDetails() {
                 />
               </div>
             </div>
-          </div>
+            </div>
+          )}
 
           {/* Section 6: About Me */}
-          <div className="space-y-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-                <MessageSquare className="w-4 h-4 text-indigo-600" />
+          {currentStep === 6 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 text-indigo-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">About Me</h2>
               </div>
-              <h2 className="text-xl font-semibold text-gray-900">About Me</h2>
-            </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Short Bio (max 250 characters)</label>
@@ -733,50 +785,77 @@ export default function UserDetails() {
                 {formData.bio.length}/250
               </div>
             </div>
-          </div>
-
-          {/* ML Output Preview */}
-          <div className="bg-gradient-to-r from-blue-50 to-teal-50 rounded-xl p-6 border border-blue-200">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Search className="w-4 h-4 text-blue-600" />
-              </div>
-              <h2 className="text-xl font-semibold text-gray-900">ML Compatibility Preview</h2>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white rounded-lg p-4 text-center">
-                <div className="text-sm text-gray-600 mb-1">Cleanliness Score</div>
-                <div className="text-lg font-bold text-teal-600">{mlPreview.cleanlinessScore}</div>
+          )}
+
+          {/* ML Output Preview - Only show on last step */}
+          {currentStep === 6 && (
+            <div className="bg-gradient-to-r from-blue-50 to-teal-50 rounded-xl p-6 border border-blue-200 animate-fadeIn">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Search className="w-4 h-4 text-blue-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">ML Compatibility Preview</h2>
               </div>
-              <div className="bg-white rounded-lg p-4 text-center">
-                <div className="text-sm text-gray-600 mb-1">Lifestyle Type</div>
-                <div className="text-lg font-bold text-blue-600">{mlPreview.lifestyleType}</div>
-              </div>
-              <div className="bg-white rounded-lg p-4 text-center">
-                <div className="text-sm text-gray-600 mb-1">Compatibility Cluster</div>
-                <div className="text-lg font-bold text-purple-600">{mlPreview.compatibilityCluster}</div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white rounded-lg p-4 text-center">
+                  <div className="text-sm text-gray-600 mb-1">Cleanliness Score</div>
+                  <div className="text-lg font-bold text-teal-600">{mlPreview.cleanlinessScore}</div>
+                </div>
+                <div className="bg-white rounded-lg p-4 text-center">
+                  <div className="text-sm text-gray-600 mb-1">Lifestyle Type</div>
+                  <div className="text-lg font-bold text-blue-600">{mlPreview.lifestyleType}</div>
+                </div>
+                <div className="bg-white rounded-lg p-4 text-center">
+                  <div className="text-sm text-gray-600 mb-1">Compatibility Cluster</div>
+                  <div className="text-lg font-bold text-purple-600">{mlPreview.compatibilityCluster}</div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
-              type="submit"
-              className="bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-blue-700 text-white px-8 py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
-            >
-              <Search className="w-5 h-5" />
-              Find Compatible Roommates
-            </button>
+          {/* Navigation Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-between items-center pt-6 border-t border-gray-200">
+            <div className="flex gap-4">
+              {currentStep > 1 && (
+                <button
+                  type="button"
+                  onClick={handlePrevStep}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                  Previous
+                </button>
+              )}
+              
+              {currentStep < totalSteps ? (
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  className="bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-blue-700 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                >
+                  Next
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-blue-700 text-white px-8 py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                >
+                  <Search className="w-5 h-5" />
+                  Find Compatible Roommates
+                </button>
+              )}
+            </div>
             
             <button
               type="button"
               onClick={handleSavePreferences}
-              className="bg-white border-2 border-teal-600 text-teal-600 hover:bg-teal-50 px-8 py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+              className="bg-white border-2 border-teal-600 text-teal-600 hover:bg-teal-50 px-6 py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
             >
               <Save className="w-5 h-5" />
-              Save Preferences
+              Save Progress
             </button>
           </div>
         </form>

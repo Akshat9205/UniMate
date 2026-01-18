@@ -7,6 +7,10 @@ require('dotenv').config();
 const User = require('./models/User');
 const Contact = require('./models/Contact');
 const UserDetails = require('./models/UserDetails');
+const BugReport = require('./models/BugReport');
+const SupportTicket = require('./models/SupportTicket');
+const RoommateMatcher = require('./ml/RoommateMatcher');
+const CSVRoommateMatcher = require('./ml/CSVRoommateMatcher');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -19,6 +23,41 @@ app.use(express.json());
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('MongoDB connection error:', err));
+
+// Initialize ML Models
+const roommateMatcher = new RoommateMatcher();
+const csvRoommateMatcher = new CSVRoommateMatcher();
+
+// Train CSV model when server starts
+async function initializeCSVModel() {
+  try {
+    csvRoommateMatcher.trainModel();
+    console.log('CSV ML Model trained successfully');
+  } catch (error) {
+    console.error('CSV ML Model training failed:', error);
+  }
+}
+
+// Train ML model with existing data when server starts
+async function initializeMongoMLModel() {
+  try {
+    const users = await UserDetails.find({});
+    if (users.length > 0) {
+      await roommateMatcher.trainModel(users);
+      console.log(`MongoDB ML Model trained with ${users.length} users`);
+    } else {
+      console.log('No users found for MongoDB ML training');
+    }
+  } catch (error) {
+    console.error('MongoDB ML Model training failed:', error);
+  }
+}
+
+// Initialize both models after MongoDB connection
+mongoose.connection.once('open', () => {
+  initializeCSVModel();
+  initializeMongoMLModel();
+});
 
 // Signup endpoint
 app.post('/api/signup', async (req, res) => {
@@ -247,6 +286,366 @@ app.get('/api/user-details', async (req, res) => {
     res.json(userDetails);
   } catch (error) {
     console.error('Error fetching user details:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ML Roommate Matching Endpoint (CSV-based)
+app.post('/api/match', async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    // Validate input
+    if (!userId) {
+      return res.status(400).json({ message: 'userId is required' });
+    }
+
+    // Check if CSV ML model is trained
+    if (!csvRoommateMatcher.isTrained) {
+      return res.status(503).json({ message: 'CSV ML model not ready. Please try again later.' });
+    }
+
+    // Get user details from MongoDB
+    const userDetails = await UserDetails.findById(userId);
+    if (!userDetails) {
+      return res.status(404).json({ message: 'User not found in database' });
+    }
+
+    // Find compatible roommates using CSV data
+    const matches = csvRoommateMatcher.findMatchesForUser(userDetails, 5);
+
+    res.json({
+      success: true,
+      matches: matches,
+      totalMatches: matches.length,
+      dataSource: 'CSV'
+    });
+
+  } catch (error) {
+    console.error('Matching error:', error);
+    
+    if (error.message.includes('not found')) {
+      return res.status(404).json({ message: 'User not found or no lifestyle data available' });
+    }
+    
+    if (error.message.includes('not trained')) {
+      return res.status(503).json({ message: 'ML model not ready. Please try again later.' });
+    }
+
+    res.status(500).json({ message: 'Server error during matching' });
+  }
+});
+
+// ML Model Status Endpoint
+app.get('/api/ml-status', (req, res) => {
+  try {
+    const csvStats = csvRoommateMatcher.getStats();
+    const mongoStats = roommateMatcher.getStats();
+    
+    res.json({
+      success: true,
+      csvModel: csvStats,
+      mongoModel: mongoStats,
+      activeModel: 'CSV'
+    });
+  } catch (error) {
+    console.error('ML status error:', error);
+    res.status(500).json({ message: 'Server error fetching ML status' });
+  }
+});
+
+// CSV Data Sample Endpoint
+app.get('/api/csv-sample', (req, res) => {
+  try {
+    const sampleData = csvRoommateMatcher.getSampleData(3);
+    res.json({
+      success: true,
+      sampleData: sampleData
+    });
+  } catch (error) {
+    console.error('CSV sample error:', error);
+    res.status(500).json({ message: 'Server error fetching CSV sample' });
+  }
+});
+
+// Retrain ML Model Endpoint (for admin use)
+app.post('/api/ml-retrain', async (req, res) => {
+  try {
+    console.log('Retraining ML model...');
+    const users = await UserDetails.find({});
+    
+    if (users.length === 0) {
+      return res.status(400).json({ message: 'No users found for training' });
+    }
+
+    await roommateMatcher.trainModel(users);
+    
+    res.json({
+      success: true,
+      message: `ML model retrained with ${users.length} users`,
+      totalUsers: users.length
+    });
+    
+  } catch (error) {
+    console.error('ML retraining error:', error);
+    res.status(500).json({ message: 'Server error during ML retraining' });
+  }
+});
+
+// Bug Report submission endpoint
+app.post('/api/bug-report', async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      severity,
+      type,
+      reporterName,
+      reporterEmail,
+      userId,
+      browserInfo,
+      osInfo,
+      stepsToReproduce,
+      expectedBehavior,
+      actualBehavior,
+      screenshots
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !description || !reporterName || !reporterEmail) {
+      return res.status(400).json({ message: 'Please fill in all required fields' });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(reporterEmail)) {
+      return res.status(400).json({ message: 'Please enter a valid email address' });
+    }
+
+    // Create new bug report
+    const newBugReport = new BugReport({
+      title: title.trim(),
+      description: description.trim(),
+      severity: severity || 'medium',
+      type: type || 'functionality',
+      reporterName: reporterName.trim(),
+      reporterEmail: reporterEmail.trim(),
+      userId: userId || null,
+      browserInfo: browserInfo?.trim() || '',
+      osInfo: osInfo?.trim() || '',
+      stepsToReproduce: stepsToReproduce?.trim() || '',
+      expectedBehavior: expectedBehavior?.trim() || '',
+      actualBehavior: actualBehavior?.trim() || '',
+      screenshots: screenshots || []
+    });
+
+    await newBugReport.save();
+
+    res.status(201).json({ 
+      message: 'Bug report submitted successfully',
+      bugReport: {
+        id: newBugReport._id,
+        title: newBugReport.title,
+        severity: newBugReport.severity,
+        type: newBugReport.type,
+        status: newBugReport.status,
+        createdAt: newBugReport.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Bug report submission error:', error);
+    res.status(500).json({ message: 'Server error during bug report submission' });
+  }
+});
+
+// Get all bug reports (for admin)
+app.get('/api/bug-report', async (req, res) => {
+  try {
+    const bugReports = await BugReport.find().sort({ createdAt: -1 });
+    res.json(bugReports);
+  } catch (error) {
+    console.error('Error fetching bug reports:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Update bug report status (for admin)
+app.patch('/api/bug-report/:id', async (req, res) => {
+  try {
+    const { status } = req.body;
+    
+    if (!status || !['open', 'in-progress', 'resolved', 'closed'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const updatedBugReport = await BugReport.findByIdAndUpdate(
+      req.params.id,
+      { status, updatedAt: Date.now() },
+      { new: true }
+    );
+
+    if (!updatedBugReport) {
+      return res.status(404).json({ message: 'Bug report not found' });
+    }
+
+    res.json({
+      message: 'Bug report status updated successfully',
+      bugReport: updatedBugReport
+    });
+  } catch (error) {
+    console.error('Error updating bug report:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Support Ticket endpoints
+app.post('/api/support-ticket', async (req, res) => {
+  try {
+    const {
+      userId,
+      category,
+      subject,
+      message,
+      priority = 'medium',
+      attachment
+    } = req.body;
+
+    // Validate required fields
+    if (!category || !subject || !message) {
+      return res.status(400).json({ message: 'Please fill in all required fields' });
+    }
+
+    // Create new support ticket
+    const newTicket = new SupportTicket({
+      userId: userId || 'anonymous',
+      category,
+      subject: subject.trim(),
+      message: message.trim(),
+      priority,
+      attachment: attachment || null
+    });
+
+    await newTicket.save();
+
+    res.status(201).json({ 
+      message: 'Support ticket created successfully',
+      ticket: {
+        id: newTicket._id,
+        ticketId: newTicket.ticketId,
+        category: newTicket.category,
+        subject: newTicket.subject,
+        status: newTicket.status,
+        priority: newTicket.priority,
+        createdAt: newTicket.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Support ticket creation error:', error);
+    res.status(500).json({ message: 'Server error during ticket creation' });
+  }
+});
+
+// Get all support tickets (for admin)
+app.get('/api/support-ticket', async (req, res) => {
+  try {
+    const { status, category, userId } = req.query;
+    const filter = {};
+    
+    if (status) filter.status = status;
+    if (category) filter.category = category;
+    if (userId) filter.userId = userId;
+
+    const tickets = await SupportTicket.find(filter)
+      .sort({ createdAt: -1 })
+      .select('-chatHistory');
+    
+    res.json(tickets);
+  } catch (error) {
+    console.error('Error fetching support tickets:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get single support ticket
+app.get('/api/support-ticket/:id', async (req, res) => {
+  try {
+    const ticket = await SupportTicket.findById(req.params.id);
+    
+    if (!ticket) {
+      return res.status(404).json({ message: 'Support ticket not found' });
+    }
+
+    res.json(ticket);
+  } catch (error) {
+    console.error('Error fetching support ticket:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Add chat message to support ticket
+app.post('/api/support-ticket/:id/chat', async (req, res) => {
+  try {
+    const { sender, content } = req.body;
+    
+    if (!sender || !content) {
+      return res.status(400).json({ message: 'Sender and content are required' });
+    }
+
+    const ticket = await SupportTicket.findById(req.params.id);
+    
+    if (!ticket) {
+      return res.status(404).json({ message: 'Support ticket not found' });
+    }
+
+    await ticket.addChatMessage(sender, content);
+
+    res.json({
+      message: 'Chat message added successfully',
+      chatHistory: ticket.chatHistory
+    });
+  } catch (error) {
+    console.error('Error adding chat message:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Update support ticket status
+app.patch('/api/support-ticket/:id', async (req, res) => {
+  try {
+    const { status, assignedAgent, resolution } = req.body;
+    
+    const ticket = await SupportTicket.findById(req.params.id);
+    
+    if (!ticket) {
+      return res.status(404).json({ message: 'Support ticket not found' });
+    }
+
+    if (status) ticket.status = status;
+    if (assignedAgent) ticket.assignedAgent = assignedAgent;
+    
+    if (status === 'resolved' && resolution) {
+      await ticket.resolve(resolution);
+    } else {
+      await ticket.save();
+    }
+
+    res.json({
+      message: 'Support ticket updated successfully',
+      ticket: ticket
+    });
+  } catch (error) {
+    console.error('Error updating support ticket:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get support ticket statistics
+app.get('/api/support-ticket/stats', async (req, res) => {
+  try {
+    const stats = await SupportTicket.getStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching support ticket stats:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
